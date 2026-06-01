@@ -1,0 +1,10 @@
+node_modules/
+.venv/
+assets/tray.png
+__pycache__/
+*.pyc
+.DS_Store
+dist/
+out/
+.claude/
+package-lock.json

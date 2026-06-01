@@ -1,0 +1,16 @@
+{
+  "name": "qvoice",
+  "version": "0.1.0",
+  "description": "Local voice-to-text with glass UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "setup": "bash setup.sh"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^42.3.0"
+  }
+}
