@@ -8,8 +8,8 @@ echo "── Qvoice Setup ──────────────────
 echo ""
 echo "Creating Python venv with Python 3.12..."
 uv venv .venv --python 3.12
-echo "Installing faster-whisper..."
-uv pip install --python .venv/bin/python faster-whisper
+echo "Installing Python packages (faster-whisper + llama-cpp-python)..."
+uv pip install --python .venv/bin/python faster-whisper llama-cpp-python
 
 # 2. Tray icon (22x22 white circle PNG for macOS menu bar)
 echo ""
@@ -70,7 +70,9 @@ echo ""
 echo "  3. Run the app:"
 echo "     npm start"
 echo ""
-echo "  On first launch, Whisper downloads ~140 MB model (~30s)."
+echo "  On first launch two models are downloaded and cached:"
+echo "    Whisper base.en  ~140 MB"
+echo "    Qwen2.5-0.5B     ~350 MB"
 echo "  Subsequent launches are instant."
 echo ""
-echo "  Hold ⌥Space to record. Release to transcribe + paste."
+echo "  Double-tap Control to start/stop recording."

@@ -73,7 +73,7 @@ class WavRecorder {
 
 // ─── UI ───────────────────────────────────────────────────────
 const panel    = document.getElementById('panel')
-const states   = { loading: 's-loading', recording: 's-recording', transcribing: 's-transcribing', result: 's-result' }
+const states   = { loading: 's-loading', recording: 's-recording', transcribing: 's-transcribing', correcting: 's-correcting', result: 's-result' }
 const waveform = document.getElementById('waveform')
 const bars     = waveform.querySelectorAll('.bar')
 const resultEl = document.getElementById('result-text')
@@ -123,8 +123,13 @@ const recorder = new WavRecorder()
 showState('loading')
 
 window.qvoice.onServerReady(() => {
-  // Window is already hidden between uses; nothing to do here.
-  // On next recording, we'll show recording state directly.
+  // Nothing to do — window stays hidden until next recording.
+})
+
+window.qvoice.onTranscriptionProgress((data) => {
+  if (data.status === 'transcribed') {
+    showState('correcting')
+  }
 })
 
 window.qvoice.onShowLoading(() => {
@@ -171,25 +176,13 @@ window.qvoice.onRecordingStop(async () => {
     return
   }
 
-  // Show result
-  resultEl.textContent = result.text.trim()
-  showState('result')
-
-  // Resize to fit text
-  requestAnimationFrame(() => {
-    const newH = Math.max(90, panel.scrollHeight + 20)
-    setHeight(newH)
-    window.qvoice.resultReady(result.text.trim(), newH)
-  })
-
-  // Fade out after 3s then hide
+  // Animate panel out, then signal main to hide + paste.
+  // Main hides the window before pasting so the previous app regains focus.
+  panel.classList.remove('entering')
+  panel.classList.add('exiting')
   setTimeout(() => {
-    panel.classList.remove('entering')
-    panel.classList.add('exiting')
-    setTimeout(() => {
-      panel.classList.remove('exiting')
-      panel.classList.add('entering')
-      window.qvoice.hideWindow()
-    }, 200)
-  }, 3000)
+    panel.classList.remove('exiting')
+    panel.classList.add('entering')
+    window.qvoice.resultReady(result.text.trim())
+  }, 180)
 })

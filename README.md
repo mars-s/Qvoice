@@ -12,9 +12,13 @@ UI inspired by [glass](https://github.com/pickle-com/glass). Transcription power
 
 1. Double-tap **Control** — glass panel slides in, recording starts
 2. Speak
-3. Double-tap **Control** again — transcribes locally, pastes wherever your cursor is
+3. Double-tap **Control** again — the panel shows each stage, then pastes
 
-The panel shows a live waveform while recording, then the transcribed text briefly before dismissing itself.
+```
+Recording → Transcribing → Correcting → Pasted
+```
+
+**Whisper** converts your speech to text. A local **Qwen2.5-0.5B** model then fixes grammar, punctuation, and misheard words before the result hits your clipboard. Everything runs on-device — no network calls.
 
 ## Requirements
 
@@ -36,7 +40,12 @@ The setup script:
 - Generates the menu bar icon
 - Runs `npm install`
 
-On **first launch**, Whisper downloads the `base.en` model (~140 MB). This is cached — subsequent launches are instant.
+On **first launch**, two models are downloaded and cached (~490 MB total). Subsequent launches are instant.
+
+| Model | Size | Purpose |
+|---|---|---|
+| Whisper `base.en` | ~140 MB | Speech-to-text |
+| Qwen2.5-0.5B-Instruct Q4 | ~350 MB | Grammar & error correction |
 
 ## Run
 
@@ -75,7 +84,8 @@ QVOICE_MODEL=small.en npm start
 |---|---|
 | App shell | [Electron](https://electronjs.org) |
 | Global hotkey | [uiohook-napi](https://github.com/SnosMe/uiohook-napi) |
-| Transcription | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) |
+| Transcription | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — Whisper base.en |
+| Correction | [llama-cpp-python](https://github.com/abetlen/llama-cpp-python) — Qwen2.5-0.5B-Instruct (Metal) |
 | Audio format | 16 kHz mono WAV (encoded in-browser, no ffmpeg needed) |
 | Paste | AppleScript `System Events` keystroke |
 

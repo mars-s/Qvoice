@@ -15,8 +15,9 @@ let isRecording = false
 let transcribeProcess = null
 let serverReady = false
 let serverBuffer = ''
-let pendingTranscribeResolve = null
+let pendingCallbacks = null  // { onProgress, resolve, reject }
 let recordingToken = null
+let correctionEnabled = true
 const serverEvents = new EventEmitter()
 
 // ─── App Init ─────────────────────────────────────────────────
@@ -80,17 +81,24 @@ function createTray() {
 }
 
 function updateTrayMenu(state = 'idle') {
-  const label = {
-    idle: 'Double-tap Control to record',
+  const status = {
+    idle:      'Double-tap Control to record',
     recording: '⏺ Recording...',
-    loading: '○ Loading model...',
+    loading:   '○ Loading models...',
   }[state] || 'Double-tap Control to record'
 
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Qvoice', enabled: false },
-    { label, enabled: false },
+    { label: status, enabled: false },
     { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() }
+    {
+      label: 'AI Correction',
+      type: 'checkbox',
+      checked: correctionEnabled,
+      click: (item) => { correctionEnabled = item.checked },
+    },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() },
   ]))
 }
 
@@ -119,10 +127,12 @@ function startTranscribeServer() {
         serverReady = true
         serverEvents.emit('ready')
         win?.webContents.send('server-ready')
-      } else if (pendingTranscribeResolve) {
-        const resolve = pendingTranscribeResolve
-        pendingTranscribeResolve = null
-        resolve(msg)
+      } else if (msg.status === 'transcribed' && pendingCallbacks) {
+        pendingCallbacks.onProgress(msg)
+      } else if ((msg.status === 'ok' || msg.status === 'error') && pendingCallbacks) {
+        const { resolve, reject } = pendingCallbacks
+        pendingCallbacks = null
+        msg.status === 'ok' ? resolve(msg) : reject(new Error(msg.error))
       }
     }
   })
@@ -136,25 +146,27 @@ function startTranscribeServer() {
   })
 }
 
-function runTranscription(audioPath) {
+function runTranscription(audioPath, onProgress) {
   return new Promise((resolve, reject) => {
     if (!transcribeProcess || !serverReady) {
       reject(new Error('Server not ready'))
       return
     }
-    pendingTranscribeResolve = resolve
-    transcribeProcess.stdin.write(JSON.stringify({ audio_path: audioPath }) + '\n')
 
     const timeout = setTimeout(() => {
-      if (pendingTranscribeResolve === resolve) {
-        pendingTranscribeResolve = null
+      if (pendingCallbacks) {
+        pendingCallbacks = null
         reject(new Error('Transcription timed out'))
       }
-    }, 30000)
+    }, 60000)
 
-    // Clear timeout once resolved
-    const orig = resolve
-    pendingTranscribeResolve = (val) => { clearTimeout(timeout); orig(val) }
+    pendingCallbacks = {
+      onProgress,
+      resolve: (val) => { clearTimeout(timeout); resolve(val) },
+      reject:  (err) => { clearTimeout(timeout); reject(err) },
+    }
+
+    transcribeProcess.stdin.write(JSON.stringify({ audio_path: audioPath, correction: correctionEnabled }) + '\n')
   })
 }
 
@@ -234,18 +246,22 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
   fs.writeFileSync(tmpPath, Buffer.from(audioBuffer))
 
   try {
-    return await runTranscription(tmpPath)
+    return await runTranscription(tmpPath, (progress) => {
+      event.sender.send('transcription-progress', progress)
+    })
   } finally {
     try { fs.unlinkSync(tmpPath) } catch {}
   }
 })
 
-ipcMain.on('result-ready', (event, { text, height }) => {
-  win.setSize(520, Math.min(height, 300))
+ipcMain.on('result-ready', (event, { text }) => {
   clipboard.writeText(text)
 
-  // Window is non-focusable so the previous app always keeps focus.
-  // Small delay lets any lingering Control key state settle before paste.
+  // Hide first — this returns focus to the previous app naturally.
+  // Then paste into whatever is now frontmost.
+  win.hide()
+  win.setSize(520, 110)
+
   setTimeout(() => {
     try {
       execSync(
@@ -255,7 +271,7 @@ ipcMain.on('result-ready', (event, { text, height }) => {
     } catch (e) {
       console.error('Auto-paste failed:', e.message)
     }
-  }, 250)
+  }, 200)
 })
 
 ipcMain.on('set-height', (event, h) => {

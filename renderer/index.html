@@ -71,8 +71,9 @@
       flex-shrink: 0;
     }
 
-    .dot-record { background: #ff3b30; box-shadow: 0 0 6px #ff3b3066; animation: blink 1.2s ease-in-out infinite; }
+    .dot-record  { background: #ff3b30; box-shadow: 0 0 6px #ff3b3066; animation: blink 1.2s ease-in-out infinite; }
     .dot-process { background: #ffd60a; }
+    .dot-correct { background: #bf5af2; }
     .dot-done    { background: #30d158; }
     .dot-idle    { background: rgba(255,255,255,0.2); }
 
@@ -204,6 +205,17 @@
         <div class="status-row">
           <div class="dot dot-process"></div>
           <span class="status-label">Transcribing</span>
+        </div>
+        <div class="dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <!-- Correcting state -->
+      <div id="s-correcting" class="hidden">
+        <div class="status-row">
+          <div class="dot dot-correct"></div>
+          <span class="status-label">Correcting</span>
         </div>
         <div class="dots">
           <span></span><span></span><span></span>
