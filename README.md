@@ -1,6 +1,6 @@
 # Qvoice
 
-Local voice-to-text for macOS. Double-tap **Control** to start recording, double-tap again to transcribe and paste — all on-device, no cloud, no subscription.
+Local voice-to-text for macOS, a superwhisper clone. Double-tap **Control** to start recording, double-tap again to transcribe and paste — all on-device, no cloud, no subscription.
 
 UI inspired by [glass](https://github.com/pickle-com/glass). Transcription powered by [Whisper](https://github.com/openai/whisper) via [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
 
