@@ -36,7 +36,7 @@ print("Correction model ready.", file=sys.stderr, flush=True)
 print(json.dumps({"status": "ready"}), flush=True)
 
 # ─── Request loop ─────────────────────────────────────────────
-SYSTEM_PROMPT = (
+DEFAULT_SYSTEM_PROMPT = (
     "You are a speech transcription corrector. "
     "Fix grammar, punctuation, and misheard words in the user's text. "
     "Return ONLY the corrected text — no explanation, no quotes, nothing else."
@@ -49,6 +49,8 @@ for line in sys.stdin:
     try:
         req = json.loads(line)
         audio_path = req["audio_path"]
+        system_prompt = req.get("system_prompt") or DEFAULT_SYSTEM_PROMPT
+        beam_size = int(req.get("beam_size", 5))
 
         # Partial mode: fast Whisper only, no LLM (used for live preview during recording)
         if req.get("partial"):
@@ -60,7 +62,7 @@ for line in sys.stdin:
         # Step 1 — Whisper
         segments, _ = whisper.transcribe(
             audio_path,
-            beam_size=5,
+            beam_size=beam_size,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 300},
         )
@@ -80,7 +82,7 @@ for line in sys.stdin:
 
         response = llm.create_chat_completion(
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": raw},
             ],
             max_tokens=512,

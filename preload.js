@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('qvoice', {
+  onSettingsUpdate:       (cb) => ipcRenderer.on('settings-update',        (_, s) => cb(s)),
   onServerReady:          (cb) => ipcRenderer.on('server-ready',           () => cb()),
   onShowLoading:          (cb) => ipcRenderer.on('show-loading',           () => cb()),
   onRecordingStart:       (cb) => ipcRenderer.on('recording-start',        () => cb()),
