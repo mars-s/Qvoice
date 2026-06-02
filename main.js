@@ -11,6 +11,7 @@ const EventEmitter = require('events')
 // ─── State ────────────────────────────────────────────────────
 let win = null
 let tray = null
+let settingsWin = null
 let isRecording = false
 let transcribeProcess = null
 let serverReady = false
@@ -21,13 +22,40 @@ let previewText = ''
 let previousAppPID = null  // PID of the frontmost process when recording started
 let recordingToken = null
 let correctionEnabled = true
+let settings = {}
 const serverEvents = new EventEmitter()
+
+// ─── Settings ─────────────────────────────────────────────────
+const DEFAULT_SETTINGS = {
+  whisperModel: 'base.en',
+  llmRepo: 'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+  llmFile: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+  systemPrompt: 'You are a speech transcription corrector. Fix grammar, punctuation, and misheard words in the user\'s text. Return ONLY the corrected text — no explanation, no quotes, nothing else.',
+  autoPaste: false,
+  correctionEnabled: true,
+  beamSize: 5,
+}
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(path.join(app.getPath('userData'), 'qvoice-settings.json'), 'utf8')
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+  } catch {
+    return { ...DEFAULT_SETTINGS }
+  }
+}
+
+function saveSettingsToDisk(s) {
+  fs.writeFileSync(path.join(app.getPath('userData'), 'qvoice-settings.json'), JSON.stringify(s, null, 2))
+}
 
 // ─── App Init ─────────────────────────────────────────────────
 app.setName('Qvoice')
 if (app.dock) app.dock.hide()
 
 app.whenReady().then(() => {
+  settings = loadSettings()
+  correctionEnabled = settings.correctionEnabled
   createWindow()
   createTray()
   startTranscribeServer()
@@ -66,6 +94,9 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'floating')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   win.loadFile('renderer/index.html')
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('settings-update', { autoPaste: settings.autoPaste })
+  })
 }
 
 // ─── Tray ─────────────────────────────────────────────────────
@@ -98,8 +129,13 @@ function updateTrayMenu(state = 'idle') {
       label: 'AI Correction',
       type: 'checkbox',
       checked: correctionEnabled,
-      click: (item) => { correctionEnabled = item.checked },
+      click: (item) => {
+        correctionEnabled = item.checked
+        settings.correctionEnabled = item.checked
+        saveSettingsToDisk(settings)
+      },
     },
+    { label: 'Settings…', click: () => openSettingsWindow() },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]))
@@ -112,9 +148,27 @@ function getPython() {
   return fs.existsSync(venvPy) ? venvPy : 'python3'
 }
 
+function restartTranscribeServer() {
+  serverReady = false
+  serverBuffer = ''
+  while (pendingQueue.length > 0) {
+    const { reject } = pendingQueue.shift()
+    reject(new Error('Server restarting'))
+  }
+  transcribeProcess?.kill()
+  transcribeProcess = null
+  startTranscribeServer()
+}
+
 function startTranscribeServer() {
   const script = path.join(__dirname, 'transcribe_server.py')
-  transcribeProcess = spawn(getPython(), [script], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const env = {
+    ...process.env,
+    QVOICE_MODEL: settings.whisperModel || DEFAULT_SETTINGS.whisperModel,
+    QVOICE_LLM_REPO: settings.llmRepo || DEFAULT_SETTINGS.llmRepo,
+    QVOICE_LLM_FILE: settings.llmFile || DEFAULT_SETTINGS.llmFile,
+  }
+  transcribeProcess = spawn(getPython(), [script], { stdio: ['pipe', 'pipe', 'pipe'], env })
 
   transcribeProcess.stdout.on('data', (data) => {
     serverBuffer += data.toString()
@@ -176,6 +230,8 @@ function runTranscription(audioPath, onProgress, options = {}) {
       audio_path: audioPath,
       correction: !options.partial && correctionEnabled,
       partial: options.partial || false,
+      system_prompt: settings.systemPrompt || DEFAULT_SETTINGS.systemPrompt,
+      beam_size: options.partial ? 1 : (settings.beamSize || DEFAULT_SETTINGS.beamSize),
     }) + '\n')
   })
 }
@@ -334,4 +390,46 @@ ipcMain.on('hide-window', () => {
   previewText = ''
   win.hide()
   win.setSize(520, 110)
+})
+
+// ─── Settings Window ──────────────────────────────────────────
+function openSettingsWindow() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.focus()
+    return
+  }
+  settingsWin = new BrowserWindow({
+    width: 520,
+    height: 600,
+    title: 'Qvoice Settings',
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 16, y: 16 },
+    backgroundColor: '#111113',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-settings.js'),
+      contextIsolation: true,
+    }
+  })
+  settingsWin.loadFile('renderer/settings.html')
+  settingsWin.on('closed', () => { settingsWin = null })
+}
+
+ipcMain.handle('get-settings', () => ({ ...settings }))
+
+ipcMain.handle('save-settings', (_, newSettings) => {
+  const needsRestart =
+    newSettings.whisperModel !== settings.whisperModel ||
+    newSettings.llmRepo      !== settings.llmRepo      ||
+    newSettings.llmFile      !== settings.llmFile
+
+  settings = { ...settings, ...newSettings }
+  correctionEnabled = settings.correctionEnabled
+  saveSettingsToDisk(settings)
+  win?.webContents.send('settings-update', { autoPaste: settings.autoPaste })
+  updateTrayMenu()
+
+  if (needsRestart) restartTranscribeServer()
 })

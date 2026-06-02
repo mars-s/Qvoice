@@ -161,6 +161,11 @@ function triggerPaste() {
   }, 180)
 }
 
+// ─── Settings ─────────────────────────────────────────────────
+let autoPaste = false
+
+window.qvoice.onSettingsUpdate((s) => { autoPaste = s.autoPaste })
+
 // ─── Main Logic ───────────────────────────────────────────────
 showState('loading')
 
@@ -230,11 +235,15 @@ window.qvoice.onRecordingStop(async () => {
     return
   }
 
-  // Show preview — user confirms before paste
-  previewTextEl.textContent = result.text.trim()
-  showState('preview')
-  requestAnimationFrame(() => setHeight(panel.scrollHeight + 20))
-  window.qvoice.previewReady(result.text.trim())
+  const trimmed = result.text.trim()
+  if (autoPaste) {
+    window.qvoice.confirmPaste(trimmed)
+  } else {
+    previewTextEl.textContent = trimmed
+    showState('preview')
+    requestAnimationFrame(() => setHeight(panel.scrollHeight + 20))
+    window.qvoice.previewReady(trimmed)
+  }
 })
 
 // Double-tap Control from main.js to confirm paste
