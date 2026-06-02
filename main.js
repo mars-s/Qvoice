@@ -3,7 +3,7 @@ const {
   nativeImage, clipboard, screen, globalShortcut
 } = require('electron')
 const path = require('path')
-const { execSync, spawn } = require('child_process')
+const { execSync, spawn, spawnSync } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const EventEmitter = require('events')
@@ -18,6 +18,7 @@ let serverBuffer = ''
 let pendingQueue = []  // array of { onProgress, resolve, reject }
 let isPreviewing = false
 let previewText = ''
+let previousAppPID = null  // PID of the frontmost process when recording started
 let recordingToken = null
 let correctionEnabled = true
 const serverEvents = new EventEmitter()
@@ -185,16 +186,30 @@ function doPaste(text) {
   clipboard.writeText(text)
   win.hide()
   win.setSize(520, 110)
+
+  const pid = previousAppPID
+  previousAppPID = null
+
   setTimeout(() => {
     try {
-      execSync(
-        `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`,
-        { timeout: 1000 }
-      )
+      if (pid) {
+        // Activate by PID — reliable regardless of internal process name ("stable" for Cursor,
+        // "Electron" for some apps) which breaks "tell application <name> to activate".
+        spawnSync('osascript', [
+          '-e', `tell application "System Events" to set frontmost of first process whose unix id is ${pid} to true`,
+          '-e', 'delay 0.2',
+          '-e', 'tell application "System Events" to keystroke "v" using {command down}',
+        ], { timeout: 3000 })
+      } else {
+        execSync(
+          `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`,
+          { timeout: 1000 }
+        )
+      }
     } catch (e) {
       console.error('Auto-paste failed:', e.message)
     }
-  }, 200)
+  }, 100)
 }
 
 // ─── Recording ────────────────────────────────────────────────
@@ -203,6 +218,14 @@ async function startRecording() {
   isRecording = true
   const token = Symbol()
   recordingToken = token
+
+  // Capture frontmost process PID NOW — before our window appears — so doPaste can re-activate it
+  try {
+    previousAppPID = parseInt(execSync(
+      `osascript -e 'tell application "System Events" to unix id of first process whose frontmost is true'`,
+      { timeout: 1000 }
+    ).toString().trim(), 10) || null
+  } catch { previousAppPID = null }
 
   win.showInactive()
   updateTrayMenu('recording')
