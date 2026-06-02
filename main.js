@@ -3,9 +3,15 @@ const {
   nativeImage, clipboard, screen, globalShortcut
 } = require('electron')
 const path = require('path')
-const { execSync, spawn } = require('child_process')
+const { spawn } = require('child_process')
 const fs = require('fs')
 const os = require('os')
+
+// WebGPU for liquid-dom rendering.
+// HTMLInCanvas is the correct Blink feature name for HTML-in-Canvas (chrome://flags/#canvas-draw-element).
+app.commandLine.appendSwitch('enable-features', 'WebGPU')
+app.commandLine.appendSwitch('enable-blink-features', 'HTMLInCanvas')
+
 const EventEmitter = require('events')
 
 // ─── State ────────────────────────────────────────────────────
@@ -46,8 +52,13 @@ function createWindow() {
     x: Math.floor(workAreaSize.width / 2 - 260),
     y: 56,
     frame: false,
+    // vibrancy gives macOS native backdrop blur (system compositor, not WebGPU).
+    // This is the only way to blur the actual desktop behind a transparent window.
+    vibrancy: 'hud',
+    visualEffectState: 'active',
     transparent: true,
-    hasShadow: false,
+    hasShadow: true,
+    roundedCorners: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
@@ -62,7 +73,12 @@ function createWindow() {
 
   win.setAlwaysOnTop(true, 'floating')
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  win.loadFile('renderer/index.html')
+  // Load Vite-built renderer; fall back to source for dev
+  const rendererPath = path.join(__dirname, 'renderer', 'dist', 'index.html')
+  const loadPath = fs.existsSync(rendererPath)
+    ? rendererPath
+    : path.join(__dirname, 'renderer', 'index.html')
+  win.loadFile(loadPath)
 }
 
 // ─── Tray ─────────────────────────────────────────────────────
@@ -263,14 +279,11 @@ ipcMain.on('result-ready', (event, { text }) => {
   win.setSize(520, 110)
 
   setTimeout(() => {
-    try {
-      execSync(
-        `osascript -e 'tell application "System Events" to keystroke "v" using {command down}'`,
-        { timeout: 1000 }
-      )
-    } catch (e) {
-      console.error('Auto-paste failed:', e.message)
-    }
+    const proc = spawn('osascript', [
+      '-e', 'tell application "System Events" to keystroke "v" using {command down}',
+    ], { stdio: 'ignore', detached: true })
+    proc.on('error', (e) => console.error('Auto-paste failed:', e.message))
+    proc.unref()
   }, 200)
 })
 
